@@ -1,0 +1,99 @@
+import { useState, useEffect, createContext, useContext } from 'react'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import axios from 'axios'
+import LoginPage from './pages/LoginPage'
+import DashboardPage from './pages/DashboardPage'
+import StudentsPage from './pages/StudentsPage'
+import ClaimsPage from './pages/ClaimsPage'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+const AuthContext = createContext(null)
+
+export function AuthProvider({ children }) {
+  const [token, setToken] = useState(localStorage.getItem('token') || '')
+  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'))
+
+  useEffect(() => {
+    if (token) {
+      localStorage.setItem('token', token)
+      axios.defaults.headers.common.Authorization = `Bearer ${token}`
+    } else {
+      localStorage.removeItem('token')
+      delete axios.defaults.headers.common.Authorization
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (user) localStorage.setItem('user', JSON.stringify(user))
+    else localStorage.removeItem('user')
+  }, [user])
+
+  const login = async (email, password) => {
+    const response = await axios.post(`${API_URL}/auth/login`, { email, password })
+    setToken(response.data.access_token)
+    setUser(response.data.user)
+    return response.data
+  }
+
+  const logout = () => {
+    setToken('')
+    setUser(null)
+  }
+
+  return <AuthContext.Provider value={{ token, user, login, logout }}>{children}</AuthContext.Provider>
+}
+
+export function useAuth() {
+  return useContext(AuthContext)
+}
+
+function ProtectedRoute({ children }) {
+  const { token } = useAuth()
+  return token ? children : <Navigate to="/login" replace />
+}
+
+function AppShell() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">Scholarship</div>
+        <nav>
+          <a href="/">Dashboard</a>
+          <a href="/students">Students</a>
+          <a href="/claims">Claims</a>
+        </nav>
+        <div className="user-box">
+          <strong>{user?.full_name || 'User'}</strong>
+          <span>{user?.role || 'Role'}</span>
+          <button onClick={handleLogout}>Logout</button>
+        </div>
+      </aside>
+      <main className="main-panel">
+        <Routes>
+          <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/students" element={<ProtectedRoute><StudentsPage /></ProtectedRoute>} />
+          <Route path="/claims" element={<ProtectedRoute><ClaimsPage /></ProtectedRoute>} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </main>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  )
+}
